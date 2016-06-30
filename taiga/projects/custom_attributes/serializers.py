@@ -35,6 +35,10 @@ class BaseCustomAttributeSerializer(serializers.LightSerializer):
     modified_date = Field()
 
 
+class EpicCustomAttributeSerializer(BaseCustomAttributeSerializer):
+    pass
+
+
 class UserStoryCustomAttributeSerializer(BaseCustomAttributeSerializer):
     pass
 
@@ -53,6 +57,10 @@ class IssueCustomAttributeSerializer(BaseCustomAttributeSerializer):
 class BaseCustomAttributesValuesSerializer(serializers.LightSerializer):
     attributes_values = Field()
     version = Field()
+
+
+class EpicCustomAttributesValuesSerializer(BaseCustomAttributesValuesSerializer):
+    epic = Field(attr="epic.id")
 
 
 class UserStoryCustomAttributesValuesSerializer(BaseCustomAttributesValuesSerializer):
