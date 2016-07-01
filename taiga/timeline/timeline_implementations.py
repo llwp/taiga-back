@@ -19,6 +19,7 @@
 from taiga.timeline.service import register_timeline_implementation
 from . import service
 
+
 @register_timeline_implementation("projects.project", "create")
 @register_timeline_implementation("projects.project", "change")
 @register_timeline_implementation("projects.project", "delete")
@@ -36,6 +37,18 @@ def project_timeline(instance, extra_data={}):
 def project_timeline(instance, extra_data={}):
     result ={
         "milestone": service.extract_milestone_info(instance),
+        "project": service.extract_project_info(instance.project),
+    }
+    result.update(extra_data)
+    return result
+
+
+@register_timeline_implementation("epics.epic", "create")
+@register_timeline_implementation("epics.epic", "change")
+@register_timeline_implementation("epics.epic", "delete")
+def epic_timeline(instance, extra_data={}):
+    result ={
+        "epic": service.extract_epic_info(instance),
         "project": service.extract_project_info(instance.project),
     }
     result.update(extra_data)
@@ -107,6 +120,7 @@ def membership_timeline(instance, extra_data={}):
     }
     result.update(extra_data)
     return result
+
 
 @register_timeline_implementation("users.user", "create")
 def user_timeline(instance, extra_data={}):
