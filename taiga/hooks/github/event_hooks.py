@@ -31,7 +31,19 @@ from .services import get_github_user
 import re
 
 
-class PushEventHook(BaseEventHook):
+class GitHubEventHook(BaseEventHook):
+    platform = "GitHub"
+    platform_prefix = "gh"
+
+    def replace_github_references(self, project_url, wiki_text):
+        if wiki_text is None:
+            wiki_text = ""
+
+        template = "\g<1>[GitHub#\g<2>]({}/issues/\g<2>)\g<3>".format(project_url)
+        return re.sub(r"(\s|^)#(\d+)(\s|$)", template, wiki_text, 0, re.M)
+
+
+class PushEventHook(GitHubEventHook):
     def process_event(self):
         if self.payload is None:
             return
@@ -62,7 +74,7 @@ class PushEventHook(BaseEventHook):
             self._change_status(ref, status_slug, github_user, commit)
 
     def _change_status(self, ref, status_slug, github_user, commit):
-        element = self.set_element_status(ref, status_slug)
+        element = self.set_item_status(ref, status_slug)
 
         github_user_id = github_user.get('id', None)
         github_user_name = github_user.get('login', None)
@@ -71,20 +83,13 @@ class PushEventHook(BaseEventHook):
         commit_url = commit.get("url", None)
         commit_message = commit.get("message", None)
 
-        if (github_user_id and github_user_name and github_user_url and
-                commit_id and commit_url and commit_message):
-            comment = _("Status changed by [@{github_user_name}]({github_user_url} "
-                        "\"See @{github_user_name}'s GitHub profile\") "
-                        "from GitHub commit [{commit_id}]({commit_url} "
-                        "\"See commit '{commit_id} - {commit_message}'\").").format(
-                                                               github_user_name=github_user_name,
-                                                               github_user_url=github_user_url,
-                                                               commit_id=commit_id[:7],
-                                                               commit_url=commit_url,
-                                                               commit_message=commit_message)
-
-        else:
-            comment = _("Status changed from GitHub commit.")
+        comment = self.generate_status_change_comment(
+            user_name=github_user_name,
+            user_url=github_user_url,
+            commit_id=commit_id[:7],
+            commit_url=commit_url,
+            commit_message=commit_message
+        )
 
         snapshot = take_snapshot(element,
                                  comment=comment,
@@ -92,15 +97,7 @@ class PushEventHook(BaseEventHook):
         send_notifications(element, history=snapshot)
 
 
-def replace_github_references(project_url, wiki_text):
-    if wiki_text == None:
-        wiki_text = ""
-
-    template = "\g<1>[GitHub#\g<2>]({}/issues/\g<2>)\g<3>".format(project_url)
-    return re.sub(r"(\s|^)#(\d+)(\s|$)", template, wiki_text, 0, re.M)
-
-
-class IssuesEventHook(BaseEventHook):
+class IssuesEventHook(GitHubEventHook):
     def process_event(self):
         if self.payload.get('action', None) != "opened":
             return
@@ -113,7 +110,7 @@ class IssuesEventHook(BaseEventHook):
         github_user_url = self.payload.get('issue', {}).get('user', {}).get('html_url', None)
         project_url = self.payload.get('repository', {}).get('html_url', None)
         description = self.payload.get('issue', {}).get('body', None)
-        description = replace_github_references(project_url, description)
+        description = self.replace_github_references(project_url, description)
 
         user = get_github_user(github_user_id)
 
@@ -133,25 +130,20 @@ class IssuesEventHook(BaseEventHook):
         )
         take_snapshot(issue, user=user)
 
-        if number and subject and github_user_name and github_user_url:
-            comment = _("Issue created by [@{github_user_name}]({github_user_url} "
-                        "\"See @{github_user_name}'s GitHub profile\") "
-                        "from GitHub.\nOrigin GitHub issue: [gh#{number} - {subject}]({github_url} "
-                        "\"Go to 'gh#{number} - {subject}'\"):\n\n"
-                        "{description}").format(github_user_name=github_user_name,
-                                                github_user_url=github_user_url,
-                                                number=number,
-                                                subject=subject,
-                                                github_url=github_url,
-                                                description=description)
-        else:
-            comment = _("Issue created from GitHub.")
+        comment = self.generate_new_issue_comment(
+            user_name=github_user_name,
+            user_url=github_user_url,
+            number=number,
+            subject=subject,
+            platform_url=github_url,
+            description=description
+        )
 
         snapshot = take_snapshot(issue, comment=comment, user=user)
         send_notifications(issue, history=snapshot)
 
 
-class IssueCommentEventHook(BaseEventHook):
+class IssueCommentEventHook(GitHubEventHook):
     def process_event(self):
         if self.payload.get('action', None) != "created":
             raise ActionSyntaxException(_("Invalid issue comment information"))
@@ -164,7 +156,7 @@ class IssueCommentEventHook(BaseEventHook):
         github_user_url = self.payload.get('sender', {}).get('html_url', None)
         project_url = self.payload.get('repository', {}).get('html_url', None)
         comment_message = self.payload.get('comment', {}).get('body', None)
-        comment_message = replace_github_references(project_url, comment_message)
+        comment_message = self.replace_github_references(project_url, comment_message)
 
         user = get_github_user(github_user_id)
 
@@ -175,20 +167,15 @@ class IssueCommentEventHook(BaseEventHook):
         tasks = Task.objects.filter(external_reference=["github", github_url])
         uss = UserStory.objects.filter(external_reference=["github", github_url])
 
-        for item in list(issues) + list(tasks) + list(uss):
-            if number and subject and github_user_name and github_user_url:
-                comment = _("Comment by [@{github_user_name}]({github_user_url} "
-                            "\"See @{github_user_name}'s GitHub profile\") "
-                            "from GitHub.\nOrigin GitHub issue: [gh#{number} - {subject}]({github_url} "
-                            "\"Go to 'gh#{number} - {subject}'\")\n\n"
-                            "{message}").format(github_user_name=github_user_name,
-                                                github_user_url=github_user_url,
-                                                number=number,
-                                                subject=subject,
-                                                github_url=github_url,
-                                                message=comment_message)
-            else:
-                comment = _("Comment From GitHub:\n\n{message}").format(message=comment_message)
+        comment = self.generate_issue_comment_message(
+            user_name=github_user_name,
+            user_url=github_user_url,
+            number=number,
+            subject=subject,
+            platform_url=github_url,
+            message=comment_message
+        )
 
+        for item in list(issues) + list(tasks) + list(uss):
             snapshot = take_snapshot(item, comment=comment, user=user)
             send_notifications(item, history=snapshot)

@@ -246,6 +246,13 @@ def test_push_event_issue_processing(client):
     new_status = f.IssueStatusFactory(project=creation_status.project)
     issue = f.IssueFactory.create(status=creation_status, project=creation_status.project, owner=creation_status.project.owner)
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -271,6 +278,13 @@ def test_push_event_task_processing(client):
     new_status = f.TaskStatusFactory(project=creation_status.project)
     task = f.TaskFactory.create(status=creation_status, project=creation_status.project, owner=creation_status.project.owner)
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -296,6 +310,13 @@ def test_push_event_user_story_processing(client):
     new_status = f.UserStoryStatusFactory(project=creation_status.project)
     user_story = f.UserStoryFactory.create(status=creation_status, project=creation_status.project, owner=creation_status.project.owner)
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -322,6 +343,13 @@ def test_push_event_multiple_actions(client):
     issue1 = f.IssueFactory.create(status=creation_status, project=creation_status.project, owner=creation_status.project.owner)
     issue2 = f.IssueFactory.create(status=creation_status, project=creation_status.project, owner=creation_status.project.owner)
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -349,6 +377,13 @@ def test_push_event_processing_case_insensitive(client):
     new_status = f.TaskStatusFactory(project=creation_status.project)
     task = f.TaskFactory.create(status=creation_status, project=creation_status.project, owner=creation_status.project.owner)
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -370,6 +405,13 @@ def test_push_event_processing_case_insensitive(client):
 def test_push_event_task_bad_processing_non_existing_ref(client):
     issue_status = f.IssueStatusFactory()
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -393,6 +435,13 @@ def test_push_event_task_bad_processing_non_existing_ref(client):
 def test_push_event_us_bad_processing_non_existing_status(client):
     user_story = f.UserStoryFactory.create()
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -417,6 +466,13 @@ def test_push_event_us_bad_processing_non_existing_status(client):
 def test_push_event_bad_processing_non_existing_status(client):
     issue = f.IssueFactory.create()
     payload = {
+        "actor": {
+            "user": {
+                "uuid": "{ce1054cd-3f43-49dc-8aea-d3085ee7ec9b}",
+                "username": "test-user",
+                "links": {"html": {"href": "http://bitbucket.com/test-user"}}
+            }
+        },
         "push": {
             "changes": [
                 {
@@ -686,8 +742,10 @@ def test_api_patch_project_modules(client):
 
 
 def test_replace_bitbucket_references():
-    assert event_hooks.replace_bitbucket_references("project-url", "#2") == "[BitBucket#2](project-url/issues/2)"
-    assert event_hooks.replace_bitbucket_references("project-url", "#2 ") == "[BitBucket#2](project-url/issues/2) "
-    assert event_hooks.replace_bitbucket_references("project-url", " #2 ") == " [BitBucket#2](project-url/issues/2) "
-    assert event_hooks.replace_bitbucket_references("project-url", " #2") == " [BitBucket#2](project-url/issues/2)"
-    assert event_hooks.replace_bitbucket_references("project-url", "#test") == "#test"
+    ev_hook = event_hooks.BitBucketEventHook
+    assert ev_hook.replace_bitbucket_references(None, "project-url", "#2") == "[BitBucket#2](project-url/issues/2)"
+    assert ev_hook.replace_bitbucket_references(None, "project-url", "#2 ") == "[BitBucket#2](project-url/issues/2) "
+    assert ev_hook.replace_bitbucket_references(None, "project-url", " #2 ") == " [BitBucket#2](project-url/issues/2) "
+    assert ev_hook.replace_bitbucket_references(None, "project-url", " #2") == " [BitBucket#2](project-url/issues/2)"
+    assert ev_hook.replace_bitbucket_references(None, "project-url", "#test") == "#test"
+    assert ev_hook.replace_bitbucket_references(None, "project-url", None) == ""

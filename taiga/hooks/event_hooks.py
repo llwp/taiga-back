@@ -25,9 +25,55 @@ from taiga.hooks.exceptions import ActionSyntaxException
 
 
 class BaseEventHook:
+    platform = "Unknown"
+    platform_prefix = ""
+
     def __init__(self, project, payload):
         self.project = project
         self.payload = payload
+
+    def generate_status_change_comment(self, **kwargs):
+        _status_change_message = _(
+            "Status changed by [@{user_name}]({user_url} "
+            "\"See @{user_name}'s {platform} profile\") "
+            "from {platform} commit [{commit_id}]({commit_url} "
+            "\"See commit '{commit_id} - {commit_message}'\")."
+        )
+        _simple_status_change_message = _("Status changed from {platform} commit.")
+        try:
+            return _status_change_message.format(platform=self.platform, **kwargs)
+        except Exception:
+            return _simple_status_change_message.format(platform=self.platform)
+
+    def generate_new_issue_comment(self, **kwargs):
+        _new_issue_message = _(
+            "Issue created by [@{user_name}]({user_url} "
+            "\"See @{user_name}'s {platform} profile\") "
+            "from {platform}.\nOrigin {platform} issue: "
+            "[{platform_prefix}#{number} - {subject}]({platform_url} "
+            "\"Go to '{platform_prefix}#{number} - {subject}'\"):\n\n"
+            "{description}"
+        )
+        _simple_new_issue_message = _("Issue created from {platform}.")
+        try:
+            return _new_issue_message.format(platform=self.platform, **kwargs)
+        except Exception:
+            return _simple_new_issue_message.format(platform=self.platform)
+
+    def generate_issue_comment_message(self, **kwargs):
+        _issue_comment_message = _(
+            "Comment by [@{user_name}]({user_url} "
+            "\"See @{user_name}'s {platform} profile\") "
+            "from {platform}.\nOrigin {platform} issue: "
+            "[{platform_prefix}#{number} - {subject}]({platform_url} "
+            "\"Go to '{platform_prefix}#{number} - {subject}'\")\n\n"
+            "{message}"
+        )
+        _simple_issue_comment_message = _("Comment From {platform}:\n\n{message}")
+        try:
+            return _issue_comment_message.format(platform=self.platform, **kwargs)
+        except Exception:
+            return _simple_issue_comment_message.format(platform=self.platform, message=kwargs.get('message'))
 
     def set_item_status(self, ref, status_slug):
         if Issue.objects.filter(project=self.project, ref=ref).exists():

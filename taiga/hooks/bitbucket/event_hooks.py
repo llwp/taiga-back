@@ -25,10 +25,26 @@ from taiga.projects.notifications.services import send_notifications
 from taiga.hooks.event_hooks import BaseEventHook
 from taiga.hooks.exceptions import ActionSyntaxException
 
+from taiga.projects.issues.models import Issue
+from taiga.projects.tasks.models import Task
+from taiga.projects.userstories.models import UserStory
+
 from .services import get_bitbucket_user
 
 
-class PushEventHook(BaseEventHook):
+class BitBucketEventHook(BaseEventHook):
+    platform = "BitBucket"
+    platform_prefix = "bb"
+
+    def replace_bitbucket_references(self, project_url, wiki_text):
+        if wiki_text is None:
+            wiki_text = ""
+
+        template = "\g<1>[BitBucket#\g<2>]({}/issues/\g<2>)\g<3>".format(project_url)
+        return re.sub(r"(\s|^)#(\d+)(\s|$)", template, wiki_text, 0, re.M)
+
+
+class PushEventHook(BitBucketEventHook):
     def process_event(self):
         if self.payload is None:
             return
@@ -40,13 +56,9 @@ class PushEventHook(BaseEventHook):
                 continue
 
             for commit in commits:
-                message = commit.get("message", None)
-                if not message:
-                    continue
+                self._process_message(commit, None)
 
-                self._process_message(message, None)
-
-    def _process_message(self, message, bitbucket_user):
+    def _process_message(self, commit, bitbucket_user):
         """
           The message we will be looking for seems like
             TG-XX #yyyyyy
@@ -54,6 +66,7 @@ class PushEventHook(BaseEventHook):
             XX: is the ref for us, issue or task
             yyyyyy: is the status slug we are setting
         """
+        message = commit.get("message", None)
         if message is None:
             return
 
@@ -61,23 +74,33 @@ class PushEventHook(BaseEventHook):
         for m in p.finditer(message.lower()):
             ref = m.group(1)
             status_slug = m.group(2)
-            self._change_status(ref, status_slug, bitbucket_user)
+            self._change_status(ref, status_slug, bitbucket_user, commit)
 
-    def _change_status(self, ref, status_slug, bitbucket_user):
-        element = self.set_element_status(ref, status_slug)
+    def _change_status(self, ref, status_slug, bitbucket_user, commit):
+        element = self.set_item_status(ref, status_slug)
+
+        bitbucket_user_name = self.payload.get('actor', {}).get('user', {}).get('username', None)
+        bitbucket_user_url = self.payload.get('actor', {}).get('user', {}).get('links', {}).get('html', {}).get('href')
+
+        commit_id = commit.get("id", None)
+        commit_url = commit.get("url", None)
+        commit_message = commit.get("message", None)
+
+        comment = self.generate_status_change_comment(
+            user_name=bitbucket_user_name,
+            user_url=bitbucket_user_url,
+            commit_id=commit_id[:7],
+            commit_url=commit_url,
+            commit_message=commit_message
+        )
 
         snapshot = take_snapshot(element,
-                                 comment=_("Status changed from BitBucket commit"),
+                                 comment=comment,
                                  user=get_bitbucket_user(bitbucket_user))
         send_notifications(element, history=snapshot)
 
 
-def replace_bitbucket_references(project_url, wiki_text):
-    template = "\g<1>[BitBucket#\g<2>]({}/issues/\g<2>)\g<3>".format(project_url)
-    return re.sub(r"(\s|^)#(\d+)(\s|$)", template, wiki_text, 0, re.M)
-
-
-class IssuesEventHook(BaseEventHook):
+class IssuesEventHook(BitBucketEventHook):
     def process_event(self):
         number = self.payload.get('issue', {}).get('id', None)
         subject = self.payload.get('issue', {}).get('title', None)
@@ -91,7 +114,7 @@ class IssuesEventHook(BaseEventHook):
         project_url = self.payload.get('repository', {}).get('links', {}).get('html', {}).get('href', None)
 
         description = self.payload.get('issue', {}).get('content', {}).get('raw', '')
-        description = replace_bitbucket_references(project_url, description)
+        description = self.replace_bitbucket_references(project_url, description)
 
         user = get_bitbucket_user(bitbucket_user_id)
 
@@ -111,25 +134,20 @@ class IssuesEventHook(BaseEventHook):
         )
         take_snapshot(issue, user=user)
 
-        if number and subject and bitbucket_user_name and bitbucket_user_url:
-            comment = _("Issue created by [@{bitbucket_user_name}]({bitbucket_user_url} "
-                        "\"See @{bitbucket_user_name}'s BitBucket profile\") "
-                        "from BitBucket.\nOrigin BitBucket issue: [bb#{number} - {subject}]({bitbucket_url} "
-                        "\"Go to 'bb#{number} - {subject}'\"):\n\n"
-                        "{description}").format(bitbucket_user_name=bitbucket_user_name,
-                                                bitbucket_user_url=bitbucket_user_url,
-                                                number=number,
-                                                subject=subject,
-                                                bitbucket_url=bitbucket_url,
-                                                description=description)
-        else:
-            comment = _("Issue created from BitBucket.")
+        comment = self.generate_new_issue_comment(
+            user_name=bitbucket_user_name,
+            user_url=bitbucket_user_url,
+            number=number,
+            subject=subject,
+            platform_url=bitbucket_url,
+            description=description
+        )
 
         snapshot = take_snapshot(issue, comment=comment, user=user)
         send_notifications(issue, history=snapshot)
 
 
-class IssueCommentEventHook(BaseEventHook):
+class IssueCommentEventHook(BitBucketEventHook):
     def process_event(self):
         number = self.payload.get('issue', {}).get('id', None)
         subject = self.payload.get('issue', {}).get('title', None)
@@ -142,7 +160,7 @@ class IssueCommentEventHook(BaseEventHook):
         project_url = self.payload.get('repository', {}).get('links', {}).get('html', {}).get('href', None)
 
         comment_message = self.payload.get('comment', {}).get('content', {}).get('raw', '')
-        comment_message = replace_bitbucket_references(project_url, comment_message)
+        comment_message = self.replace_bitbucket_references(project_url, comment_message)
 
         user = get_bitbucket_user(bitbucket_user_id)
 
@@ -153,20 +171,15 @@ class IssueCommentEventHook(BaseEventHook):
         tasks = Task.objects.filter(external_reference=["bitbucket", bitbucket_url])
         uss = UserStory.objects.filter(external_reference=["bitbucket", bitbucket_url])
 
-        for item in list(issues) + list(tasks) + list(uss):
-            if number and subject and bitbucket_user_name and bitbucket_user_url:
-                comment = _("Comment by [@{bitbucket_user_name}]({bitbucket_user_url} "
-                            "\"See @{bitbucket_user_name}'s BitBucket profile\") "
-                            "from BitBucket.\nOrigin BitBucket issue: [bb#{number} - {subject}]({bitbucket_url} "
-                            "\"Go to 'bb#{number} - {subject}'\")\n\n"
-                            "{message}").format(bitbucket_user_name=bitbucket_user_name,
-                                                bitbucket_user_url=bitbucket_user_url,
-                                                number=number,
-                                                subject=subject,
-                                                bitbucket_url=bitbucket_url,
-                                                message=comment_message)
-            else:
-                comment = _("Comment From BitBucket:\n\n{message}").format(message=comment_message)
+        comment = self.generate_issue_comment_message(
+            user_name=bitbucket_user_name,
+            user_url=bitbucket_user_url,
+            number=number,
+            subject=subject,
+            platform_url=bitbucket_url,
+            message=comment_message
+        )
 
+        for item in list(issues) + list(tasks) + list(uss):
             snapshot = take_snapshot(item, comment=comment, user=user)
             send_notifications(item, history=snapshot)

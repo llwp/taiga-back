@@ -512,9 +512,10 @@ def test_api_patch_project_modules(client):
 
 
 def test_replace_github_references():
-    assert event_hooks.replace_github_references("project-url", "#2") == "[GitHub#2](project-url/issues/2)"
-    assert event_hooks.replace_github_references("project-url", "#2 ") == "[GitHub#2](project-url/issues/2) "
-    assert event_hooks.replace_github_references("project-url", " #2 ") == " [GitHub#2](project-url/issues/2) "
-    assert event_hooks.replace_github_references("project-url", " #2") == " [GitHub#2](project-url/issues/2)"
-    assert event_hooks.replace_github_references("project-url", "#test") == "#test"
-    assert event_hooks.replace_github_references("project-url", None) == ""
+    ev_hook = event_hooks.GitHubEventHook
+    assert ev_hook.replace_github_references(None, "project-url", "#2") == "[GitHub#2](project-url/issues/2)"
+    assert ev_hook.replace_github_references(None, "project-url", "#2 ") == "[GitHub#2](project-url/issues/2) "
+    assert ev_hook.replace_github_references(None, "project-url", " #2 ") == " [GitHub#2](project-url/issues/2) "
+    assert ev_hook.replace_github_references(None, "project-url", " #2") == " [GitHub#2](project-url/issues/2)"
+    assert ev_hook.replace_github_references(None, "project-url", "#test") == "#test"
+    assert ev_hook.replace_github_references(None, "project-url", None) == ""
