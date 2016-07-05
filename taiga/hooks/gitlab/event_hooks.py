@@ -21,8 +21,6 @@ import os
 
 from django.utils.translation import ugettext as _
 
-from taiga.projects.models import IssueStatus, TaskStatus, UserStoryStatus
-
 from taiga.projects.issues.models import Issue
 from taiga.projects.tasks.models import Task
 from taiga.projects.userstories.models import UserStory
@@ -61,28 +59,11 @@ class PushEventHook(BaseEventHook):
             status_slug = m.group(2)
             self._change_status(ref, status_slug, gitlab_user)
 
-    def _change_status(self, ref, status_slug, gitlab_user):
-        if Issue.objects.filter(project=self.project, ref=ref).exists():
-            modelClass = Issue
-            statusClass = IssueStatus
-        elif Task.objects.filter(project=self.project, ref=ref).exists():
-            modelClass = Task
-            statusClass = TaskStatus
-        elif UserStory.objects.filter(project=self.project, ref=ref).exists():
-            modelClass = UserStory
-            statusClass = UserStoryStatus
-        else:
-            raise ActionSyntaxException(_("The referenced element doesn't exist"))
+    def _change_status(self, ref, status_slug, gitlab_user, commit):
+        element = self.set_element_status(ref, status_slug)
 
-        element = modelClass.objects.get(project=self.project, ref=ref)
 
-        try:
-            status = statusClass.objects.get(project=self.project, slug=status_slug)
-        except statusClass.DoesNotExist:
-            raise ActionSyntaxException(_("The status doesn't exist"))
 
-        element.status = status
-        element.save()
 
         snapshot = take_snapshot(element,
                                  comment=_("Status changed from GitLab commit"),
