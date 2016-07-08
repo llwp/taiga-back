@@ -39,7 +39,6 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.db import transaction as tx
-from django_pglocks import advisory_lock
 
 from taiga.mdrender.service import render as mdrender
 from taiga.base.utils.db import get_typename_for_model_class
@@ -311,60 +310,60 @@ def take_snapshot(obj: object, *, comment: str="", user=None, delete: bool=False
     previously freezed.
     """
 
+    obj = obj.__class__._default_manager.select_for_update().get(pk=obj.pk)
     key = make_key_from_model_object(obj)
-    with advisory_lock(key):
-        typename = get_typename_for_model_class(obj.__class__)
+    typename = get_typename_for_model_class(obj.__class__)
 
-        new_fobj = freeze_model_instance(obj)
-        old_fobj, need_real_snapshot = get_last_snapshot_for_key(key)
+    new_fobj = freeze_model_instance(obj)
+    old_fobj, need_real_snapshot = get_last_snapshot_for_key(key)
 
-        entry_model = apps.get_model("history", "HistoryEntry")
-        user_id = None if user is None else user.id
-        user_name = "" if user is None else user.get_full_name()
+    entry_model = apps.get_model("history", "HistoryEntry")
+    user_id = None if user is None else user.id
+    user_name = "" if user is None else user.get_full_name()
 
-        # Determine history type
-        if delete:
-            entry_type = HistoryType.delete
-            need_real_snapshot = True
-        elif new_fobj and not old_fobj:
-            entry_type = HistoryType.create
-        elif new_fobj and old_fobj:
-            entry_type = HistoryType.change
-        else:
-            raise RuntimeError("Unexpected condition")
+    # Determine history type
+    if delete:
+        entry_type = HistoryType.delete
+        need_real_snapshot = True
+    elif new_fobj and not old_fobj:
+        entry_type = HistoryType.create
+    elif new_fobj and old_fobj:
+        entry_type = HistoryType.change
+    else:
+        raise RuntimeError("Unexpected condition")
 
-        fdiff = make_diff(old_fobj, new_fobj)
+    fdiff = make_diff(old_fobj, new_fobj)
 
-        # If diff and comment are empty, do
-        # not create empty history entry
-        if (not fdiff.diff and not comment
-                and old_fobj is not None
-                and entry_type != HistoryType.delete):
+    # If diff and comment are empty, do
+    # not create empty history entry
+    if (not fdiff.diff and not comment
+            and old_fobj is not None
+            and entry_type != HistoryType.delete):
 
-            return None
+        return None
 
-        fvals = make_diff_values(typename, fdiff)
+    fvals = make_diff_values(typename, fdiff)
 
-        if len(comment) > 0:
-            is_hidden = False
-        else:
-            is_hidden = is_hidden_snapshot(fdiff)
+    if len(comment) > 0:
+        is_hidden = False
+    else:
+        is_hidden = is_hidden_snapshot(fdiff)
 
-        kwargs = {
-            "user": {"pk": user_id, "name": user_name},
-            "project_id": getattr(obj, 'project_id', getattr(obj, 'id', None)),
-            "key": key,
-            "type": entry_type,
-            "snapshot": fdiff.snapshot if need_real_snapshot else None,
-            "diff": fdiff.diff,
-            "values": fvals,
-            "comment": comment,
-            "comment_html": mdrender(obj.project, comment),
-            "is_hidden": is_hidden,
-            "is_snapshot": need_real_snapshot,
-        }
+    kwargs = {
+        "user": {"pk": user_id, "name": user_name},
+        "project_id": getattr(obj, 'project_id', getattr(obj, 'id', None)),
+        "key": key,
+        "type": entry_type,
+        "snapshot": fdiff.snapshot if need_real_snapshot else None,
+        "diff": fdiff.diff,
+        "values": fvals,
+        "comment": comment,
+        "comment_html": mdrender(obj.project, comment),
+        "is_hidden": is_hidden,
+        "is_snapshot": need_real_snapshot,
+    }
 
-        return entry_model.objects.create(**kwargs)
+    return entry_model.objects.create(**kwargs)
 
 
 # High level query api
